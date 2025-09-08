@@ -53,17 +53,17 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    const Color primaryColor = Color(0xFF6A11CB); // Purple
+    const Color primaryColor = Color(0xFF003366); 
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F9FF), 
+      backgroundColor: const Color(0xFFF5F9FF),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(height: 50,),
+              const SizedBox(height: 50),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
@@ -102,10 +102,8 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
                   ],
                 ),
               ),
-        
+
               const SizedBox(height: 32),
-        
-              // Login Form
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -132,8 +130,6 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
                         ),
                       ),
                       const SizedBox(height: 24),
-        
-                      // Email
                       TextFormField(
                         controller: _emailController,
                         decoration: InputDecoration(
@@ -147,8 +143,6 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
                             value == null || value.isEmpty ? "Enter your email" : null,
                       ),
                       const SizedBox(height: 20),
-        
-                      // Password
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
@@ -173,8 +167,6 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
                             value == null || value.isEmpty ? "Enter your password" : null,
                       ),
                       const SizedBox(height: 30),
-        
-                      // Login Button
                       SizedBox(
                         width: double.infinity,
                         height: 50,
