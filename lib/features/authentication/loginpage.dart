@@ -1,3 +1,4 @@
+import 'package:filehandling/homescreen.dart';
 import 'package:flutter/material.dart';
 
 class SimpleLoginPage extends StatefulWidget {
@@ -20,18 +21,9 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
       String password = _passwordController.text;
 
       if (email == "admin" && password == "123456") {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Login Successful'),
-            content: Text('Welcome, $email!'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomeScreen(username: email)),
         );
       } else {
         showDialog(
@@ -53,7 +45,7 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    const Color primaryColor = Color(0xFF003366); 
+    const Color primaryColor = Color.fromARGB(255, 4, 91, 178);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F9FF),
@@ -102,7 +94,6 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 32),
               Container(
                 padding: const EdgeInsets.all(24),
@@ -133,7 +124,7 @@ class _SimpleLoginPageState extends State<SimpleLoginPage> {
                       TextFormField(
                         controller: _emailController,
                         decoration: InputDecoration(
-                          labelText: "Email",
+                          labelText: "Username",
                           prefixIcon: const Icon(Icons.email_outlined),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
