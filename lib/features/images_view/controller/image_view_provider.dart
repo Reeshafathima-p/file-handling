@@ -72,7 +72,7 @@ class ImageViewProvider with ChangeNotifier {
       final debugInfo = await _fileService.debugStorageInfo();
       print('Storage Debug Info: $debugInfo');
       
-      final images = await _fileService.listThumbnails();
+      final images = await _fileService.listImages();
       print('Loaded ${images.length} images from storage');
       
       selectedImages = images;
@@ -299,6 +299,55 @@ class ImageViewProvider with ChangeNotifier {
     selectedImages.removeAt(index);
     notifyListeners();
     // Show success message
+  }
+
+  Future<Map<String, dynamic>> testEncryption() async {
+    try {
+      final result = await _fileService.testEncryption();
+      print('Encryption Test Result: $result');
+      return result;
+    } catch (e) {
+      print('Error testing encryption: $e');
+      return {'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> verifyStoredFilesEncryption() async {
+    try {
+      final result = await _fileService.verifyEncryption();
+      print('Encryption Verification Result: $result');
+      return result;
+    } catch (e) {
+      print('Error verifying encryption: $e');
+      return {'error': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> getEncryptionStatus() async {
+    try {
+      final result = await _fileService.verifyEncryption();
+      final encryptedImages = result['imagesEncrypted'] as List<String>? ?? [];
+      final encryptedThumbs = result['thumbnailsEncrypted'] as List<String>? ?? [];
+      final totalEncrypted = encryptedImages.length + encryptedThumbs.length;
+
+      return {
+        'totalEncrypted': totalEncrypted,
+        'encryptedImages': encryptedImages.length,
+        'encryptedThumbnails': encryptedThumbs.length,
+        'totalImages': result['totalImages'] ?? 0,
+        'totalThumbnails': result['totalThumbnails'] ?? 0,
+      };
+    } catch (e) {
+      print('Error getting encryption status: $e');
+      return {
+        'totalEncrypted': 0,
+        'encryptedImages': 0,
+        'encryptedThumbnails': 0,
+        'totalImages': 0,
+        'totalThumbnails': 0,
+        'error': e.toString()
+      };
+    }
   }
 
   String getImageSize(File file) {

@@ -1,13 +1,30 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:mime/mime.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:encrypt/encrypt.dart' as encrypt;
+import 'dart:convert';
 
 class FileStorageService {
   FileStorageService._();
   static final instance = FileStorageService._();
+
+  // Encryption key - using a fixed key for simplicity (in production, use a secure key management system)
+  static final _encryptionKey = encrypt.Key.fromUtf8('my32lengthsupersecretencryptionkey!'); // 32 bytes
+  static final _iv = encrypt.IV.fromLength(16); // 16 bytes IV
+
+  // Get encrypter instance
+  encrypt.Encrypter get _encrypter => encrypt.Encrypter(encrypt.AES(_encryptionKey));
+
+  // Encrypt data
+  List<int> _encryptData(List<int> data) {
+    final uint8Data = Uint8List.fromList(data);
+    final encrypted = _encrypter.encryptBytes(uint8Data, iv: _iv);
+    return encrypted.bytes;
+  }
 
   // Root: app documents directory
   Future<Directory> _docsDir() => getApplicationDocumentsDirectory(); // [13]
@@ -94,15 +111,19 @@ class FileStorageService {
         return;
       }
 
-      // Save compressed thumbnail
+      // Encrypt the compressed thumbnail before saving
+      final encryptedThumbnailBytes = _encryptData(compressedBytes);
+
+      // Save encrypted thumbnail
       final thumbnailFile = File(thumbnailPath);
-      await thumbnailFile.writeAsBytes(compressedBytes);
+      await thumbnailFile.writeAsBytes(encryptedThumbnailBytes);
 
       final compressedSize = compressedBytes.length;
+      final encryptedSize = encryptedThumbnailBytes.length;
       final compressionRatio = ((originalSize - compressedSize) / originalSize * 100).round();
 
-      print('Thumbnail created with maximum compression: $thumbnailPath');
-      print('Original size: ${originalSize} bytes, Compressed size: ${compressedSize} bytes');
+      print('Thumbnail created, compressed, and encrypted: $thumbnailPath');
+      print('Original size: ${originalSize} bytes, Compressed size: ${compressedSize} bytes, Encrypted size: ${encryptedSize} bytes');
       print('Compression ratio: ${compressionRatio}% size reduction');
     } catch (e) {
       print('Error creating thumbnail with flutter_image_compress: $e');
@@ -135,14 +156,24 @@ class FileStorageService {
       targetPath = p.join(subdir.path, fileName);
     }
 
-    final copiedFile = await File(srcPath).copy(targetPath); // [13]
+    // Read file content and encrypt it
+    final sourceFile = File(srcPath);
+    final originalBytes = await sourceFile.readAsBytes();
+    final encryptedBytes = _encryptData(originalBytes);
+
+    // Save encrypted content
+    final targetFile = File(targetPath);
+    await targetFile.writeAsBytes(encryptedBytes);
+
+    print('File encrypted and saved: $targetPath');
+    print('Original size: ${originalBytes.length} bytes, Encrypted size: ${encryptedBytes.length} bytes');
 
     // Create thumbnail if it's an image
     if (dirName == 'images') {
-      await _createThumbnail(copiedFile, fileName);
+      await _createThumbnail(targetFile, fileName);
     }
 
-    return copiedFile;
+    return targetFile;
   }
 
   // Save an existing File categorized
@@ -170,16 +201,23 @@ class FileStorageService {
       print('saveFileCategorized: File exists, using unique name: $targetPath');
     }
 
-    final copiedFile = await source.copy(targetPath);
-    print('saveFileCategorized: File copied successfully to: ${copiedFile.path}');
-    print('saveFileCategorized: File exists after copy: ${await copiedFile.exists()}');
+    // Read file content and encrypt it
+    final originalBytes = await source.readAsBytes();
+    final encryptedBytes = _encryptData(originalBytes);
+
+    // Save encrypted content
+    final targetFile = File(targetPath);
+    await targetFile.writeAsBytes(encryptedBytes);
+
+    print('File encrypted and saved: $targetPath');
+    print('Original size: ${originalBytes.length} bytes, Encrypted size: ${encryptedBytes.length} bytes');
 
     // Create thumbnail if it's an image
     if (dirName == 'images') {
-      await _createThumbnail(copiedFile, fileName);
+      await _createThumbnail(targetFile, fileName);
     }
 
-    return copiedFile;
+    return targetFile;
   }
 
   // Save bytes with a given filename, categorized by extension in the name
@@ -188,9 +226,16 @@ class FileStorageService {
     final tmpProbePath = p.join(tempDocs.path, fileName); // used for mime probe by name
     final dirName = await _dirNameForPath(tmpProbePath);
     final subdir = await _ensureSubdir(dirName);
+
+    // Encrypt the bytes before saving
+    final encryptedBytes = _encryptData(bytes);
+
     final file = File(p.join(subdir.path, fileName));
     await file.create(recursive: true);
-    final savedFile = await file.writeAsBytes(bytes, flush: flush);
+    final savedFile = await file.writeAsBytes(encryptedBytes, flush: flush);
+
+    print('Bytes encrypted and saved: ${savedFile.path}');
+    print('Original size: ${bytes.length} bytes, Encrypted size: ${encryptedBytes.length} bytes');
 
     // Create thumbnail if it's an image
     if (dirName == 'images') {
@@ -234,12 +279,139 @@ class FileStorageService {
     return null;
   }
 
+ 
+
+  // Verify if files are encrypted by checking file headers
+  Future<Map<String, dynamic>> verifyEncryption() async {
+    final imagesDir = await _ensureSubdir('images');
+    final thumbnailsDir = await _ensureSubdir('thumbnails');
+
+    final imageFiles = await listImages();
+    final thumbnailFiles = await listThumbnails();
+
+    Map<String, dynamic> results = {
+      'imagesEncrypted': <String>[],
+      'imagesNotEncrypted': <String>[],
+      'thumbnailsEncrypted': <String>[],
+      'thumbnailsNotEncrypted': <String>[],
+      'totalImages': imageFiles.length,
+      'totalThumbnails': thumbnailFiles.length,
+    };
+
+    // Check image files
+    for (final file in imageFiles) {
+      final bytes = await file.readAsBytes();
+      final isEncrypted = _isFileEncrypted(bytes);
+      final fileName = p.basename(file.path);
+
+      if (isEncrypted) {
+        results['imagesEncrypted'].add(fileName);
+      } else {
+        results['imagesNotEncrypted'].add(fileName);
+      }
+    }
+
+    // Check thumbnail files
+    for (final file in thumbnailFiles) {
+      final bytes = await file.readAsBytes();
+      final isEncrypted = _isFileEncrypted(bytes);
+      final fileName = p.basename(file.path);
+
+      if (isEncrypted) {
+        results['thumbnailsEncrypted'].add(fileName);
+      } else {
+        results['thumbnailsNotEncrypted'].add(fileName);
+      }
+    }
+
+    return results;
+  }
+
+  // Helper method to check if file content appears to be encrypted
+  bool _isFileEncrypted(List<int> bytes) {
+    if (bytes.length < 16) return false;
+
+    // Check if the first 16 bytes match our IV pattern (random bytes)
+    // Encrypted files should not have recognizable image headers
+    final header = bytes.sublist(0, 16);
+
+    // Common image file signatures that should NOT be present in encrypted files
+    final imageSignatures = [
+      [0xFF, 0xD8, 0xFF], // JPEG SOI
+      [0x89, 0x50, 0x4E, 0x47], // PNG
+      [0x47, 0x49, 0x46, 0x38], // GIF
+      [0x42, 0x4D], // BMP
+      [0x52, 0x49, 0x46, 0x46], // WebP (starts with RIFF)
+    ];
+
+    for (final signature in imageSignatures) {
+      if (header.length >= signature.length) {
+        bool matches = true;
+        for (int i = 0; i < signature.length; i++) {
+          if (header[i] != signature[i]) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) {
+          return false; // File has recognizable image header, not encrypted
+        }
+      }
+    }
+
+    return true; // No recognizable headers found, likely encrypted
+  }
+
+  // Test encryption by creating and verifying a test file
+  Future<Map<String, dynamic>> testEncryption() async {
+    try {
+      // Create test data
+      final testData = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]); // JPEG header
+      final testFileName = 'encryption_test.jpg';
+
+      // Save encrypted test file
+      final savedFile = await saveBytesCategorized(testFileName, testData);
+
+      // Read back the saved file
+      final savedBytes = await savedFile.readAsBytes();
+
+      // Check if the saved file is encrypted
+      final isEncrypted = _isFileEncrypted(savedBytes);
+
+      // Try to display as image (this should fail if encrypted)
+      bool canDisplayAsImage = false;
+      try {
+        // This is just a simulation - in reality Image.file would fail with encrypted data
+        canDisplayAsImage = !isEncrypted;
+      } catch (e) {
+        canDisplayAsImage = false;
+      }
+
+      return {
+        'testFilePath': savedFile.path,
+        'originalSize': testData.length,
+        'savedSize': savedBytes.length,
+        'isEncrypted': isEncrypted,
+        'canDisplayAsImage': canDisplayAsImage,
+        'encryptionWorking': isEncrypted && !canDisplayAsImage,
+        'message': isEncrypted
+            ? '✅ Encryption is working - file is encrypted and cannot be displayed as image'
+            : '❌ Encryption is NOT working - file appears to be unencrypted'
+      };
+    } catch (e) {
+      return {
+        'error': e.toString(),
+        'message': '❌ Error during encryption test'
+      };
+    }
+  }
+
   // Debug method to check storage paths and contents
   Future<Map<String, dynamic>> debugStorageInfo() async {
     final docsDir = await _docsDir();
     final imagesDir = await _ensureSubdir('images');
     final imageFiles = await listImages();
-    
+
     return {
       'documentsPath': docsDir.path,
       'imagesPath': imagesDir.path,

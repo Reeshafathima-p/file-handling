@@ -152,7 +152,7 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
 
   Widget _buildBody() {
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(30),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -263,8 +263,8 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
         childAspectRatio: 1,
       ),
       itemCount: thumbnailFiles.length,
@@ -337,13 +337,13 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Text(
-                    _getThumbnailSize(thumbnailFile),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 8,
-                    ),
-                  ),
+                  // Text(
+                  //   _getThumbnailSize(thumbnailFile),
+                  //   style: const TextStyle(
+                  //     color: Colors.white70,
+                  //     fontSize: 8,
+                  //   ),
+                  // ),
                 ],
               ),
             ),
@@ -353,3 +353,11 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
     );
   }
 }
+
+
+
+
+
+
+
+

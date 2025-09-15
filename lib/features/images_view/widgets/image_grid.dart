@@ -12,8 +12,8 @@ class ImageGrid extends StatelessWidget {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
         childAspectRatio: 1,
       ),
       itemCount: provider.selectedImages.length,

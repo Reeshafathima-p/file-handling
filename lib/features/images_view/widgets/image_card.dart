@@ -70,41 +70,41 @@ class ImageCard extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            bottom: 8,
-            left: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      imageFile.path.split('/').last,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    provider.getImageSize(imageFile),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Positioned(
+          //   bottom: 8,
+          //   left: 8,
+          //   right: 8,
+          //   child: Container(
+          //     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          //     decoration: BoxDecoration(
+          //       color: Colors.black.withOpacity(0.7),
+          //       borderRadius: BorderRadius.circular(8),
+          //     ),
+          //     child: Row(
+          //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          //       children: [
+          //         Expanded(
+          //           child: Text(
+          //             imageFile.path.split('/').last,
+          //             style: const TextStyle(
+          //               color: Colors.white,
+          //               fontSize: 10,
+          //               fontWeight: FontWeight.w500,
+          //             ),
+          //             overflow: TextOverflow.ellipsis,
+          //           ),
+          //         ),
+          //         Text(
+          //           provider.getImageSize(imageFile),
+          //           style: const TextStyle(
+          //             color: Colors.white70,
+          //             fontSize: 10,
+          //           ),
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );
