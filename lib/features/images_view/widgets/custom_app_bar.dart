@@ -98,6 +98,172 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     return actions;
   }
 
+  void _showEncryptionStatus(BuildContext context, ImageViewProvider provider) async {
+    // Show loading dialog first
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const AlertDialog(
+          // shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Checking encryption status...'),
+            ],
+          ),
+        );
+      },
+    );
+
+    try {
+      // Get encryption status
+      final status = await provider.getEncryptionStatus();
+      Navigator.pop(context); // Close loading dialog
+
+      // Show results
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text(
+              '🔐 Encryption Status',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Total encrypted files
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.lock, color: Color(0xFF10B981), size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${status['totalEncrypted']}',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF10B981),
+                        ),
+                      ),
+                      const Text(
+                        'Total Encrypted Files',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF10B981),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Breakdown
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatusCard(
+                        'Images',
+                        status['encryptedImages'],
+                        status['totalImages'],
+                        Icons.image,
+                        const Color(0xFF3B82F6),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildStatusCard(
+                        'Thumbnails',
+                        status['encryptedThumbnails'],
+                        status['totalThumbnails'],
+                        Icons.photo_size_select_small,
+                        const Color(0xFFF59E0B),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // Security status
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: status['totalEncrypted'] > 0
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: status['totalEncrypted'] > 0
+                          ? Colors.green.withOpacity(0.3)
+                          : Colors.orange.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        status['totalEncrypted'] > 0 ? Icons.security : Icons.warning,
+                        color: status['totalEncrypted'] > 0 ? Colors.green : Colors.orange,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          status['totalEncrypted'] > 0
+                              ? '✅ Files are encrypted and secure'
+                              : '⚠️ No encrypted files found',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: status['totalEncrypted'] > 0 ? Colors.green : Colors.orange,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Error'),
+            content: Text('Failed to check encryption status: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
 
   Widget _buildStatusCard(String title, int encrypted, int total, IconData icon, Color color) {
     return Container(

@@ -13,17 +13,47 @@ class FileStorageService {
   static final instance = FileStorageService._();
 
   // Encryption key - using a fixed key for simplicity (in production, use a secure key management system)
-  static final _encryptionKey = encrypt.Key.fromUtf8('my32lengthsupersecretencryptionkey!'); // 32 bytes
-  static final _iv = encrypt.IV.fromLength(16); // 16 bytes IV
+  static final _encryptionKey = encrypt.Key.fromUtf8('0123456789abcdef0123456789abcdef'); // 32 bytes
+  static final _iv = encrypt.IV.fromUtf8('0123456789abcdef'); // 16 bytes IV
 
   // Get encrypter instance
   encrypt.Encrypter get _encrypter => encrypt.Encrypter(encrypt.AES(_encryptionKey));
 
   // Encrypt data
   List<int> _encryptData(List<int> data) {
-    final uint8Data = Uint8List.fromList(data);
-    final encrypted = _encrypter.encryptBytes(uint8Data, iv: _iv);
-    return encrypted.bytes;
+    try {
+      final uint8Data = Uint8List.fromList(data);
+      final encrypted = _encrypter.encryptBytes(uint8Data, iv: _iv);
+      print('FileStorageService: Encrypted ${data.length} bytes to ${encrypted.bytes.length} bytes');
+      return encrypted.bytes;
+    } catch (e) {
+      print('FileStorageService: Error encrypting data: $e');
+      rethrow;
+    }
+  }
+
+  // Decrypt data
+  List<int> _decryptData(List<int> encryptedData) {
+    try {
+      print('FileStorageService: Attempting to decrypt ${encryptedData.length} bytes');
+      print('FileStorageService: First 10 encrypted bytes: ${encryptedData.sublist(0, encryptedData.length > 10 ? 10 : encryptedData.length)}');
+      print('FileStorageService: Encrypted data type: ${encryptedData.runtimeType}');
+
+      // Ensure we have Uint8List for encryption library
+      final uint8Data = encryptedData is Uint8List ? encryptedData : Uint8List.fromList(encryptedData);
+      final encrypted = encrypt.Encrypted(uint8Data);
+      final decrypted = _encrypter.decryptBytes(encrypted, iv: _iv);
+
+      print('FileStorageService: Successfully decrypted to ${decrypted.length} bytes');
+      print('FileStorageService: First 10 decrypted bytes: ${decrypted.sublist(0, decrypted.length > 10 ? 10 : decrypted.length)}');
+
+      return decrypted;
+    } catch (e) {
+      print('FileStorageService: Error decrypting data: $e');
+      print('FileStorageService: Encrypted data length: ${encryptedData.length}');
+      print('FileStorageService: Encrypted data type: ${encryptedData.runtimeType}');
+      rethrow;
+    }
   }
 
   // Root: app documents directory
@@ -95,36 +125,52 @@ class FileStorageService {
       final thumbnailFileName = 'thumb_$nameWithoutExt.jpg';
       final thumbnailPath = p.join(thumbnailsDir.path, thumbnailFileName);
 
-      // Use flutter_image_compress for maximum compression with resized dimensions
-      final compressedBytes = await FlutterImageCompress.compressWithFile(
-        sourceFile.absolute.path,
-        quality: 5, 
-        // format: CompressFormat.jpeg, // Use WebP for better compression
-        // minWidth: 100, // Resize to 100px width for thumbnail
-        // minHeight: 100, // Resize to 100px height for thumbnail
-        keepExif: false, // Remove EXIF data to reduce size
-        autoCorrectionAngle: false, // Skip auto rotation to save processing
-      );
+      // Decrypt the image data first before compression
+      final decryptedBytes = _decryptData(originalBytes);
 
-      if (compressedBytes == null) {
-        print('Failed to compress image: ${sourceFile.path}');
-        return;
+      // Create a temporary file with decrypted data for compression
+      final tempDir = await getTemporaryDirectory();
+      final tempImagePath = p.join(tempDir.path, 'temp_decrypted_$originalFileName');
+      final tempImageFile = File(tempImagePath);
+      await tempImageFile.writeAsBytes(decryptedBytes);
+
+      try {
+        // Use flutter_image_compress for maximum compression with resized dimensions
+        final compressedBytes = await FlutterImageCompress.compressWithFile(
+          tempImageFile.absolute.path,
+          quality: 5,
+          // format: CompressFormat.jpeg, // Use WebP for better compression
+          // minWidth: 100, // Resize to 100px width for thumbnail
+          // minHeight: 100, // Resize to 100px height for thumbnail
+          keepExif: false, // Remove EXIF data to reduce size
+          autoCorrectionAngle: false, // Skip auto rotation to save processing
+        );
+
+        if (compressedBytes == null) {
+          print('Failed to compress image: ${sourceFile.path}');
+          return;
+        }
+
+        // Encrypt the compressed thumbnail before saving
+        final encryptedThumbnailBytes = _encryptData(compressedBytes);
+
+        // Save encrypted thumbnail
+        final thumbnailFile = File(thumbnailPath);
+        await thumbnailFile.writeAsBytes(encryptedThumbnailBytes);
+
+        final compressedSize = compressedBytes.length;
+        final encryptedSize = encryptedThumbnailBytes.length;
+        final compressionRatio = ((originalSize - compressedSize) / originalSize * 100).round();
+
+        print('Thumbnail created, compressed, and encrypted: $thumbnailPath');
+        print('Original size: ${originalSize} bytes, Compressed size: ${compressedSize} bytes, Encrypted size: ${encryptedSize} bytes');
+        print('Compression ratio: ${compressionRatio}% size reduction');
+      } finally {
+        // Clean up temporary file
+        if (await tempImageFile.exists()) {
+          await tempImageFile.delete();
+        }
       }
-
-      // Encrypt the compressed thumbnail before saving
-      final encryptedThumbnailBytes = _encryptData(compressedBytes);
-
-      // Save encrypted thumbnail
-      final thumbnailFile = File(thumbnailPath);
-      await thumbnailFile.writeAsBytes(encryptedThumbnailBytes);
-
-      final compressedSize = compressedBytes.length;
-      final encryptedSize = encryptedThumbnailBytes.length;
-      final compressionRatio = ((originalSize - compressedSize) / originalSize * 100).round();
-
-      print('Thumbnail created, compressed, and encrypted: $thumbnailPath');
-      print('Original size: ${originalSize} bytes, Compressed size: ${compressedSize} bytes, Encrypted size: ${encryptedSize} bytes');
-      print('Compression ratio: ${compressionRatio}% size reduction');
     } catch (e) {
       print('Error creating thumbnail with flutter_image_compress: $e');
       // Don't throw error, just log it - thumbnail creation failure shouldn't stop main file save
@@ -276,10 +322,66 @@ class FileStorageService {
     if (await thumbnailFile.exists()) {
       return thumbnailPath;
     }
+
+    // Fallback: try to find any thumbnail file that starts with the same name
+    final thumbnailDir = Directory(thumbnailsDir);
+    if (await thumbnailDir.exists()) {
+      final files = await thumbnailDir.list().toList();
+      for (final file in files) {
+        if (file is File) {
+          final fileName = p.basename(file.path);
+          if (fileName.startsWith('thumb_$nameWithoutExt.')) {
+            return file.path;
+          }
+        }
+      }
+    }
+
     return null;
   }
 
- 
+  // Decrypt and read file content
+  Future<List<int>> readEncryptedFile(String filePath) async {
+    print('readEncryptedFile: Attempting to read file: $filePath');
+    final file = File(filePath);
+    if (!await file.exists()) {
+      print('readEncryptedFile: File does not exist: $filePath');
+      throw Exception('File does not exist: $filePath');
+    }
+
+    final encryptedBytes = await file.readAsBytes();
+    print('readEncryptedFile: Read ${encryptedBytes.length} encrypted bytes');
+    if (encryptedBytes.isNotEmpty) {
+      print('readEncryptedFile: First 10 bytes of encrypted data: ${encryptedBytes.sublist(0, encryptedBytes.length > 10 ? 10 : encryptedBytes.length)}');
+    }
+    final decryptedBytes = _decryptData(encryptedBytes);
+    print('readEncryptedFile: Decrypted to ${decryptedBytes.length} bytes');
+    if (decryptedBytes.isNotEmpty) {
+      print('readEncryptedFile: First 10 bytes of decrypted data: ${decryptedBytes.sublist(0, decryptedBytes.length > 10 ? 10 : decryptedBytes.length)}');
+    }
+    return decryptedBytes;
+  }
+
+  // Decrypt and read thumbnail content
+  Future<List<int>> readEncryptedThumbnail(String imageFileName) async {
+    final thumbnailPath = await getThumbnailPath(imageFileName);
+    if (thumbnailPath == null) {
+      throw Exception('Thumbnail does not exist for: $imageFileName');
+    }
+
+    return await readEncryptedFile(thumbnailPath);
+  }
+
+  // Get decrypted image bytes for display
+  Future<List<int>> getDecryptedImageBytes(String imageFileName) async {
+    final imagesDir = await imagesDirPath();
+    final imagePath = p.join(imagesDir, imageFileName);
+    print('getDecryptedImageBytes: imagesDir = $imagesDir');
+    print('getDecryptedImageBytes: imageFileName = $imageFileName');
+    print('getDecryptedImageBytes: constructed imagePath = $imagePath');
+
+    return await readEncryptedFile(imagePath);
+  }
 
   // Verify if files are encrypted by checking file headers
   Future<Map<String, dynamic>> verifyEncryption() async {

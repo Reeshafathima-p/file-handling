@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:path/path.dart' as path;
 import '../../../service/FileStorageService.dart';
 
 class ThumbnailScreen extends StatefulWidget {
@@ -275,6 +277,64 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
   }
 
   Widget _buildThumbnailCard(File thumbnailFile, int index) {
+    return ThumbnailCardWidget(
+      thumbnailFile: thumbnailFile,
+      index: index,
+    );
+  }
+}
+
+class ThumbnailCardWidget extends StatefulWidget {
+  final File thumbnailFile;
+  final int index;
+
+  const ThumbnailCardWidget({
+    super.key,
+    required this.thumbnailFile,
+    required this.index,
+  });
+
+  @override
+  State<ThumbnailCardWidget> createState() => _ThumbnailCardWidgetState();
+}
+
+class _ThumbnailCardWidgetState extends State<ThumbnailCardWidget> {
+  List<int>? _decryptedBytes;
+  bool _isLoading = true;
+  final FileStorageService _fileService = FileStorageService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDecryptedThumbnail();
+  }
+
+  Future<void> _loadDecryptedThumbnail() async {
+    try {
+      final fileName = path.basename(widget.thumbnailFile.path);
+      print('ThumbnailCard: Loading thumbnail for file: $fileName');
+
+      // Extract original image filename from thumbnail filename (thumb_[original].jpg -> [original].jpg)
+      final originalFileName = fileName.startsWith('thumb_')
+          ? fileName.substring(5) // Remove 'thumb_' prefix
+          : fileName;
+
+      print('ThumbnailCard: Extracted original filename: $originalFileName');
+
+      _decryptedBytes = await _fileService.readEncryptedThumbnail(originalFileName);
+      print('ThumbnailCard: Successfully decrypted thumbnail, size: ${_decryptedBytes?.length ?? 0} bytes');
+    } catch (e) {
+      print('ThumbnailCard: Error decrypting thumbnail: $e');
+      print('ThumbnailCard: Thumbnail file path: ${widget.thumbnailFile.path}');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -291,24 +351,44 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.file(
-              thumbnailFile,
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  width: double.infinity,
-                  height: double.infinity,
-                  color: const Color(0xFFEF4444).withOpacity(0.1),
-                  child: const Icon(
-                    Icons.broken_image,
-                    size: 30,
-                    color: Color(0xFFEF4444),
-                  ),
-                );
-              },
-            ),
+            child: _isLoading
+                ? Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    color: const Color(0xFF3B82F6).withOpacity(0.1),
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : _decryptedBytes != null
+                    ? Image.memory(
+                        Uint8List.fromList(_decryptedBytes!),
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            color: const Color(0xFFEF4444).withOpacity(0.1),
+                            child: const Icon(
+                              Icons.broken_image,
+                              size: 30,
+                              color: Color(0xFFEF4444),
+                            ),
+                          );
+                        },
+                      )
+                    : Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        color: const Color(0xFFEF4444).withOpacity(0.1),
+                        child: const Icon(
+                          Icons.broken_image,
+                          size: 30,
+                          color: Color(0xFFEF4444),
+                        ),
+                      ),
           ),
           Positioned(
             bottom: 0,
@@ -328,7 +408,7 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      thumbnailFile.path.split('/').last,
+                      path.basename(widget.thumbnailFile.path),
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 8,
@@ -353,11 +433,3 @@ class _ThumbnailScreenState extends State<ThumbnailScreen> {
     );
   }
 }
-
-
-
-
-
-
-
-

@@ -350,6 +350,41 @@ class ImageViewProvider with ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> testImageDecryption() async {
+    try {
+      if (selectedImages.isEmpty) {
+        return {'error': 'No images available to test'};
+      }
+
+      final testImage = selectedImages.first;
+      final fileName = path.basename(testImage.path);
+
+      print('Testing decryption for image: $fileName');
+
+      // Test image decryption
+      final decryptedBytes = await _fileService.getDecryptedImageBytes(fileName);
+      print('Image decryption successful, size: ${decryptedBytes.length} bytes');
+
+      // Test thumbnail decryption if available
+      final thumbnailBytes = await _fileService.readEncryptedThumbnail(fileName);
+      print('Thumbnail decryption successful, size: ${thumbnailBytes.length} bytes');
+
+      return {
+        'imageDecryption': 'success',
+        'imageSize': decryptedBytes.length,
+        'thumbnailDecryption': 'success',
+        'thumbnailSize': thumbnailBytes.length,
+        'message': '✅ Both image and thumbnail decryption working properly'
+      };
+    } catch (e) {
+      print('Error testing decryption: $e');
+      return {
+        'error': e.toString(),
+        'message': '❌ Decryption test failed'
+      };
+    }
+  }
+
   String getImageSize(File file) {
     try {
       int bytes = file.lengthSync();
