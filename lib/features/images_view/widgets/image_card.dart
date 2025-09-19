@@ -5,6 +5,7 @@ import 'package:path/path.dart' as path;
 import '../controller/image_view_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../service/FileStorageService.dart';
+import '../pages/full_image_view.dart';
 
 
 class ImageCard extends StatefulWidget {
@@ -34,11 +35,22 @@ class _ImageCardState extends State<ImageCard> {
 
   Future<void> _loadDecryptedImage() async {
     try {
+      final imageFileName = path.basename(widget.imageFile.path);
+      print('ImageCard: Image filename: $imageFileName');
       print('ImageCard: Full image file path: ${widget.imageFile.path}');
       print('ImageCard: File exists: ${await widget.imageFile.exists()}');
       print('ImageCard: File size: ${await widget.imageFile.length()} bytes');
 
-      _decryptedBytes = await _fileService.readEncryptedFile(widget.imageFile.path);
+      // Try to load thumbnail first for better performance
+      try {
+        _decryptedBytes = await _fileService.readEncryptedThumbnail(imageFileName);
+        print('ImageCard: Successfully loaded thumbnail, size: ${_decryptedBytes?.length ?? 0} bytes');
+      } catch (e) {
+        print('ImageCard: Thumbnail not available, falling back to full image: $e');
+        // Fallback to full image if thumbnail fails
+        _decryptedBytes = await _fileService.readEncryptedFile(widget.imageFile.path);
+        print('ImageCard: Successfully loaded full image, size: ${_decryptedBytes?.length ?? 0} bytes');
+      }
       print('ImageCard: Successfully decrypted image, size: ${_decryptedBytes?.length ?? 0} bytes');
       if (_decryptedBytes != null && _decryptedBytes!.isNotEmpty) {
         print('ImageCard: First 10 bytes of decrypted data: ${_decryptedBytes!.sublist(0, _decryptedBytes!.length > 10 ? 10 : _decryptedBytes!.length)}');
@@ -102,6 +114,16 @@ class _ImageCardState extends State<ImageCard> {
     final provider = Provider.of<ImageViewProvider>(context);
     return GestureDetector(
       onTap: () {
+        // Navigate to full image view
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FullImageViewScreen(
+              imageFile: widget.imageFile,
+              imageIndex: widget.index,
+            ),
+          ),
+        );
       },
       child: Container(
         decoration: BoxDecoration(

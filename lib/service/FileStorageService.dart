@@ -178,7 +178,7 @@ class FileStorageService {
   }
 
   // Public: pick a file and save into categorized subfolder
-  Future<File?> pickAndSaveCategorized() async {
+  Future<File?> pickAndSaveCategorized({bool deleteOriginal = false}) async {
     final result = await FilePicker.platform.pickFiles(withData: false); // [17]
     if (result == null || result.files.isEmpty) return null;
 
@@ -217,6 +217,16 @@ class FileStorageService {
     // Create thumbnail if it's an image
     if (dirName == 'images') {
       await _createThumbnail(targetFile, fileName);
+    }
+
+    // Delete the original file if requested
+    if (deleteOriginal) {
+      try {
+        await sourceFile.delete();
+        print('Original file deleted from storage: $srcPath');
+      } catch (e) {
+        print('Failed to delete original file: $srcPath, error: $e');
+      }
     }
 
     return targetFile;

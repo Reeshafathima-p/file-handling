@@ -60,7 +60,7 @@ class ImagePickerBottomSheet extends StatelessWidget {
                   icon: Icons.photo_library_rounded,
                   label: "Gallery",
                   color: const Color(0xFF3B82F6),
-                  onTap: () => provider.pickFromGallery(),
+                  onTap: () => provider.pickFromGallery(context),
                 ),
               ),
             ],

@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as path;
+import 'package:photo_manager/photo_manager.dart';
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import '../../../service/FileStorageService.dart';
 
 class ImageViewProvider with ChangeNotifier {
@@ -52,11 +54,15 @@ class ImageViewProvider with ChangeNotifier {
     try {
       final storageStatus = await Permission.storage.request();
       final photosStatus = await Permission.photos.request();
+      final manageStorageStatus = await Permission.manageExternalStorage.request();
+      final photoManagerStatus = await PhotoManager.requestPermissionExtend();
 
       print('Storage permission: $storageStatus');
       print('Photos permission: $photosStatus');
+      print('Manage external storage permission: $manageStorageStatus');
+      print('Photo manager permission: $photoManagerStatus');
 
-      if (storageStatus.isDenied || photosStatus.isDenied) {
+      if (storageStatus.isDenied || photosStatus.isDenied || manageStorageStatus.isDenied || !photoManagerStatus.isAuth) {
         // Handle permission denied
       }
     } catch (e) {
@@ -136,32 +142,74 @@ class ImageViewProvider with ChangeNotifier {
     }
   }
 
-  Future<void> pickFromGallery() async {
+  Future<void> pickFromGallery(BuildContext context) async {
     try {
+      // Request permissions before picking images
+      await _requestPermissions();
+
       isLoading = true;
       notifyListeners();
-      
-      final List<XFile> images = await _picker.pickMultiImage(
-        imageQuality: 85,
+
+      // Use PhotoManager to pick images with proper asset management
+      final permission = await PhotoManager.requestPermissionExtend();
+      if (!permission.isAuth) {
+        print('Photo permission denied');
+        isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      // Get all image assets from gallery
+      final albums = await PhotoManager.getAssetPathList(type: RequestType.image);
+      if (albums.isEmpty) {
+        print('No albums found');
+        isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      // Use the first album (usually "Recent" or "All")
+      final album = albums.first;
+      final assets = await album.getAssetListPaged(page: 0, size: 100);
+
+      // Use wechat_assets_picker for proper asset selection with deletion capability
+      final List<AssetEntity>? selectedAssets = await AssetPicker.pickAssets(
+        context, // Need to get context somehow
+        pickerConfig: const AssetPickerConfig(
+          maxAssets: 10,
+          requestType: RequestType.image,
+          selectedAssets: [],
+        ),
       );
-      
-      if (images.isNotEmpty) {
+
+      if (selectedAssets != null && selectedAssets.isNotEmpty) {
         List<File> savedFiles = [];
-        
-        for (int i = 0; i < images.length; i++) {
-          final image = images[i];
-          final uniqueName = _generateUniqueFileName(image.path, prefix: 'image');
-          final tempFile = await _copyFileWithNewName(File(image.path), uniqueName);
-          
-          final savedFile = await _fileService.saveFileCategorized(tempFile);
-          
-          savedFiles.add(savedFile);
-          
-          if (tempFile.path != savedFile.path && await tempFile.exists()) {
-            await tempFile.delete();
+
+        for (final asset in selectedAssets) {
+          // Get the file from the asset
+          final file = await asset.file;
+          if (file != null) {
+            final uniqueName = _generateUniqueFileName(file.path, prefix: 'gallery');
+            final tempFile = await _copyFileWithNewName(file, uniqueName);
+
+            final savedFile = await _fileService.saveFileCategorized(tempFile);
+
+            savedFiles.add(savedFile);
+
+            if (tempFile.path != savedFile.path && await tempFile.exists()) {
+              await tempFile.delete();
+            }
+
+            // Delete the original gallery image using PhotoManager
+            try {
+              final result = await PhotoManager.editor.deleteWithIds([asset.id]);
+              print('Deleted original gallery image: ${asset.id}, result: $result');
+            } catch (e) {
+              print('Failed to delete gallery image ${asset.id}: $e');
+            }
           }
         }
-        
+
         selectedImages.addAll(savedFiles);
         isLoading = false;
         notifyListeners();
@@ -172,18 +220,20 @@ class ImageViewProvider with ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
+      print('Error in pickFromGallery: $e');
       isLoading = false;
       notifyListeners();
       // Show error message
     }
   }
 
-  Future<void> pickFromFiles() async { 
+  Future<void> pickFromFiles() async {
     try {
       isLoading = true;
       notifyListeners();
-      final File? savedFile = await _fileService.pickAndSaveCategorized();
-      
+      // Delete original file from storage after saving to app
+      final File? savedFile = await _fileService.pickAndSaveCategorized(deleteOriginal: true);
+
       if (savedFile != null) {
         selectedImages.add(savedFile);
         isLoading = false;
