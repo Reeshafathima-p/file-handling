@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../controller/image_view_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../service/FileStorageService.dart';
@@ -109,6 +111,189 @@ class _ImageCardState extends State<ImageCard> {
     }
   }
 
+  void _showImageOptionsDialog(BuildContext context, ImageViewProvider provider) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Image Options'),
+          content: const Text('Choose an action for this image.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                provider.deleteImage(widget.index);
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await _restoreImage(context, provider);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3B82F6),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Restore', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _restoreImage(BuildContext context, ImageViewProvider provider) async {
+    if (_decryptedBytes == null || _decryptedBytes!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to load image data')),
+      );
+      return;
+    }
+
+    // Check if we have manage external storage permission
+    PermissionStatus manageStorageStatus = await Permission.manageExternalStorage.status;
+    print('MANAGE_EXTERNAL_STORAGE permission status: $manageStorageStatus');
+
+    // If not granted, request it
+    if (!manageStorageStatus.isGranted) {
+      manageStorageStatus = await Permission.manageExternalStorage.request();
+      print('After requesting: MANAGE_EXTERNAL_STORAGE permission status: $manageStorageStatus');
+    }
+
+    Directory? saveDir;
+    String saveLocation = 'internal storage';
+
+    try {
+      if (manageStorageStatus.isGranted) {
+        // With MANAGE_EXTERNAL_STORAGE permission, use the real Downloads directory
+        // On Android, this is /storage/emulated/0/Download (note the capitalization)
+        saveDir = Directory('/storage/emulated/0/Download');
+        print('Using real Downloads directory: ${saveDir.path}');
+
+        // Verify the directory exists or can be created
+        if (!await saveDir.exists()) {
+          await saveDir.create(recursive: true);
+        }
+
+        saveLocation = 'Download';
+      }
+
+      // Fallback to app documents directory if external storage not available or not permitted
+      if (saveDir == null || !await saveDir.exists()) {
+        saveDir = await getApplicationDocumentsDirectory();
+        print('App Documents directory: ${saveDir?.path}');
+        saveLocation = 'app Documents';
+      }
+
+      if (saveDir == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to access storage directory')),
+        );
+        return;
+      }
+
+      print('Final save directory: ${saveDir.path}');
+      print('Save location type: $saveLocation');
+
+      // Create "file handler" subdirectory
+      final fileHandlerDir = Directory(path.join(saveDir.path, 'file handler'));
+      await fileHandlerDir.create(recursive: true);
+
+      // Generate unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final extension = _getImageExtension(_decryptedBytes!);
+      final fileName = 'restored_image_$timestamp$extension';
+      final filePath = path.join(fileHandlerDir.path, fileName);
+
+      // Write the decrypted bytes to the file
+      final file = File(filePath);
+      await file.writeAsBytes(_decryptedBytes!);
+      print('File written to: $filePath');
+      print('File exists after write: ${await file.exists()}');
+      print('File size after write: ${await file.length()} bytes');
+
+      // Delete from app
+      provider.deleteImage(widget.index);
+
+      // Show success message with the actual save location
+      String message;
+      if (saveLocation == 'Downloads') {
+        message = 'Successfully saved to download/file handler folder: $fileName';
+      } else {
+        message = 'Successfully saved to app Documents/file handler folder: $fileName';
+                //  'Note: Enable "All files access" permission in settings for external storage';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      print('Error restoring image: $e');
+
+      // If external storage failed, try fallback to app documents
+      if (manageStorageStatus.isGranted && saveLocation == 'Downloads') {
+        try {
+          final fallbackDir = await getApplicationDocumentsDirectory();
+          if (fallbackDir != null) {
+            final fileHandlerDir = Directory(path.join(fallbackDir.path, 'file handler'));
+            await fileHandlerDir.create(recursive: true);
+
+            final timestamp = DateTime.now().millisecondsSinceEpoch;
+            final extension = _getImageExtension(_decryptedBytes!);
+            final fileName = 'restored_image_$timestamp$extension';
+            final filePath = path.join(fileHandlerDir.path, fileName);
+
+            final file = File(filePath);
+            await file.writeAsBytes(_decryptedBytes!);
+
+            provider.deleteImage(widget.index);
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Saved to app Documents/file handler folder\n'
+                                 'Enable "All files access" permission for external storage'),
+                duration: const Duration(seconds: 5),
+              ),
+            );
+            return;
+          }
+        } catch (fallbackError) {
+          print('Fallback save also failed: $fallbackError');
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to restore image')),
+      );
+    }
+  }
+
+  String _getImageExtension(List<int> bytes) {
+    if (bytes.length < 4) return '.jpg';
+
+    final header = bytes.sublist(0, 4);
+    if (header.length >= 2 && header[0] == 0xFF && header[1] == 0xD8) {
+      return '.jpg'; // JPEG
+    } else if (header.length >= 4 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47) {
+      return '.png'; // PNG
+    } else if (header.length >= 4 && header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38) {
+      return '.gif'; // GIF
+    }
+    return '.jpg'; // Default
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<ImageViewProvider>(context);
@@ -202,21 +387,20 @@ class _ImageCardState extends State<ImageCard> {
                         ),
             ),
             Positioned(
-              top: 8,
-              right: 8,
-              child: GestureDetector(
-                onTap: () => provider.deleteImage(widget.index),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.9),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.delete,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+              top: 0,
+              left: 30,
+              child: IconButton(
+                onPressed: () => _showImageOptionsDialog(context, provider),
+                icon: const Icon(
+                  Icons.more_vert,
+                  color: Colors.white,
+                  size: 20,
+                  
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.7),
+                  // shape: const CircleBorder(),
+                  shape: OvalBorder()
                 ),
               ),
             ),
@@ -233,24 +417,24 @@ class _ImageCardState extends State<ImageCard> {
             //     child: Row(
             //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
             //       children: [
-            //         Expanded(
-            //           child: Text(
-            //             path.basename(imageFile.path),
-            //             style: const TextStyle(
-            //               color: Colors.white,
-            //               fontSize: 10,
-            //               fontWeight: FontWeight.w500,
-            //             ),
-            //             overflow: TextOverflow.ellipsis,
-            //           ),
-            //         ),
-            //         Text(
-            //           provider.getImageSize(imageFile),
-            //           style: const TextStyle(
-            //             color: Colors.white70,
-            //             fontSize: 10,
-            //           ),
-            //         ),
+            //         // Expanded(
+            //         //   child: Text(
+            //         //     path.basename(imageFile.path),
+            //         //     style: const TextStyle(
+            //         //       color: Colors.white,
+            //         //       fontSize: 10,
+            //         //       fontWeight: FontWeight.w500,
+            //         //     ),
+            //         //     overflow: TextOverflow.ellipsis,
+            //         //   ),
+            //         // ),
+            //         // Text(
+            //         //   provider.getImageSize(imageFile),
+            //         //   style: const TextStyle(
+            //         //     color: Colors.white70,
+            //         //     fontSize: 10,
+            //         //   ),
+            //         // ),
             //       ],
             //     ),
             //   ),

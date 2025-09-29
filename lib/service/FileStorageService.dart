@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:mime/mime.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'dart:convert';
 
@@ -177,6 +178,77 @@ class FileStorageService {
     }
   }
 
+  // Create image thumbnail from video for grid display
+  Future<void> _createVideoThumbnail(File sourceFile, String originalFileName) async {
+    try {
+      final mime = await _detectMime(sourceFile.path);
+      if (mime == null || !mime.startsWith('video/')) {
+        return; // Not a video, skip thumbnail creation
+      }
+
+      // Create video_thumbnails directory (same as image thumbnails)
+      final videoThumbnailsDir = await _ensureSubdir('video_thumbnails');
+
+      // Generate thumbnail filename: vthumb_[original_filename].jpg
+      final nameWithoutExt = p.basenameWithoutExtension(originalFileName);
+      final thumbnailFileName = 'vthumb_$nameWithoutExt.jpg';
+      final thumbnailPath = p.join(videoThumbnailsDir.path, thumbnailFileName);
+
+      // Decrypt the video data first
+      final encryptedBytes = await sourceFile.readAsBytes();
+      final decryptedBytes = _decryptData(encryptedBytes);
+
+      // Create a temporary file with decrypted data for thumbnail generation
+      final tempDir = await getTemporaryDirectory();
+      final tempVideoPath = p.join(tempDir.path, 'temp_decrypted_$originalFileName');
+      final tempVideoFile = File(tempVideoPath);
+      await tempVideoFile.writeAsBytes(decryptedBytes);
+
+      try {
+        // Generate image thumbnail from video using video_thumbnail package
+        final thumbnailBytes = await VideoThumbnail.thumbnailData(
+          video: tempVideoPath,
+          imageFormat: ImageFormat.JPEG,
+          maxWidth: 300, // Reasonable size for grid display
+          quality: 75,
+          timeMs: 1000, // Get thumbnail at 1 second
+        );
+
+        if (thumbnailBytes == null) {
+          print('Failed to generate video thumbnail image: ${sourceFile.path}');
+          return;
+        }
+
+        // Further compress the thumbnail image using flutter_image_compress
+        final compressedThumbnailBytes = await FlutterImageCompress.compressWithList(
+          Uint8List.fromList(thumbnailBytes),
+          quality: 70, // Good quality for thumbnails
+          format: CompressFormat.jpeg,
+        );
+
+        final finalThumbnailBytes = compressedThumbnailBytes ?? thumbnailBytes;
+
+        // Encrypt the thumbnail image before saving
+        final encryptedThumbnailBytes = _encryptData(finalThumbnailBytes);
+
+        // Save encrypted thumbnail image
+        final thumbnailFile = File(thumbnailPath);
+        await thumbnailFile.writeAsBytes(encryptedThumbnailBytes);
+
+        print('Video thumbnail image created, compressed, and encrypted: $thumbnailPath');
+        print('Thumbnail size: ${finalThumbnailBytes.length} bytes, Encrypted size: ${encryptedThumbnailBytes.length} bytes');
+      } finally {
+        // Clean up temporary file
+        if (await tempVideoFile.exists()) {
+          await tempVideoFile.delete();
+        }
+      }
+    } catch (e) {
+      print('Error creating video thumbnail image: $e');
+      // Don't throw error, just log it - thumbnail creation failure shouldn't stop main file save
+    }
+  }
+
   // Public: pick a file and save into categorized subfolder
   Future<File?> pickAndSaveCategorized({bool deleteOriginal = false}) async {
     final result = await FilePicker.platform.pickFiles(withData: false); // [17]
@@ -272,6 +344,10 @@ class FileStorageService {
     if (dirName == 'images') {
       await _createThumbnail(targetFile, fileName);
     }
+    // Create video thumbnail if it's a video
+    else if (dirName == 'video') {
+      await _createVideoThumbnail(targetFile, fileName);
+    }
 
     return targetFile;
   }
@@ -312,6 +388,7 @@ class FileStorageService {
   Future<List<File>> listThumbnails() => listCategory('thumbnails');
   Future<List<File>> listAudio() => listCategory('audio');
   Future<List<File>> listVideo() => listCategory('video');
+  Future<List<File>> listVideoThumbnails() => listCategory('video_thumbnails');
   Future<List<File>> listOther() => listCategory('other');
 
   // Get absolute paths for subfolders
@@ -319,6 +396,7 @@ class FileStorageService {
   Future<String> thumbnailsDirPath() async => (await _ensureSubdir('thumbnails')).path;
   Future<String> audioDirPath() async => (await _ensureSubdir('audio')).path;
   Future<String> videoDirPath() async => (await _ensureSubdir('video')).path;
+  Future<String> videoThumbnailsDirPath() async => (await _ensureSubdir('video_thumbnails')).path;
   Future<String> otherDirPath() async => (await _ensureSubdir('other')).path;
 
   // Get thumbnail path for a given image filename
@@ -341,6 +419,35 @@ class FileStorageService {
         if (file is File) {
           final fileName = p.basename(file.path);
           if (fileName.startsWith('thumb_$nameWithoutExt.')) {
+            return file.path;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Get video thumbnail path for a given video filename
+  Future<String?> getVideoThumbnailPath(String videoFileName) async {
+    final videoThumbnailsDir = await videoThumbnailsDirPath();
+    final nameWithoutExt = p.basenameWithoutExtension(videoFileName);
+    final thumbnailFileName = 'vthumb_$nameWithoutExt.jpg';
+    final thumbnailPath = p.join(videoThumbnailsDir, thumbnailFileName);
+
+    final thumbnailFile = File(thumbnailPath);
+    if (await thumbnailFile.exists()) {
+      return thumbnailPath;
+    }
+
+    // Fallback: try to find any thumbnail file that starts with the same name
+    final thumbnailDir = Directory(videoThumbnailsDir);
+    if (await thumbnailDir.exists()) {
+      final files = await thumbnailDir.list().toList();
+      for (final file in files) {
+        if (file is File) {
+          final fileName = p.basename(file.path);
+          if (fileName.startsWith('vthumb_$nameWithoutExt.')) {
             return file.path;
           }
         }

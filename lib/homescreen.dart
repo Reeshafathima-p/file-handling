@@ -1,37 +1,68 @@
 import 'package:filehandling/features/images_view/pages/image.dart';
+import 'package:filehandling/features/videos_view/pages/video.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'features/homescreen/controller/home_screen_provider.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   final String username;
 
   const HomeScreen({super.key, required this.username});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late HomeScreenProvider _provider;
+
+  @override
+  void initState() {
+    super.initState();
+    _provider = HomeScreenProvider();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _provider.loadStats();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: _buildModernAppBar(),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildWelcomeSection(),
-              const SizedBox(height: 32),
-              _buildQuickStats(),
-              const SizedBox(height: 32),
-              _buildFileCategories(context),
-              const SizedBox(height: 24),
-             ],
-          ),
-        ),
+    return ChangeNotifierProvider<HomeScreenProvider>(
+      create: (_) => _provider,
+      child: Consumer<HomeScreenProvider>(
+        builder: (context, provider, child) {
+          return Scaffold(
+            backgroundColor: const Color(0xFFF8FAFC),
+            appBar: _buildModernAppBar(provider),
+            body: RefreshIndicator(
+              onRefresh: () async {
+                await provider.refreshStats();
+              },
+              color: const Color(0xFF3B82F6),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildWelcomeSection(),
+                      const SizedBox(height: 32),
+                      _buildQuickStats(provider),
+                      const SizedBox(height: 32),
+                      _buildFileCategories(context, provider),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  PreferredSizeWidget _buildModernAppBar() {
+  PreferredSizeWidget _buildModernAppBar(HomeScreenProvider provider) {
     return AppBar(
       elevation: 0,
       backgroundColor: Colors.transparent,
@@ -51,6 +82,24 @@ class HomeScreen extends StatelessWidget {
         child: const Icon(Icons.menu_rounded, color: Color(0xFF64748B)),
       ),
       actions: [
+        Container(
+          margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Color(0xFF64748B)),
+            onPressed: provider.isLoading ? null : () => provider.refreshStats(),
+          ),
+        ),
         Container(
           margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
@@ -87,7 +136,7 @@ class HomeScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          "Welcome back, $username!",
+          "Welcome back, ${widget.username}!",
           style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -106,7 +155,39 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickStats() {
+  Widget _buildQuickStats(HomeScreenProvider provider) {
+    if (provider.isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF3B82F6).withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(width: 16),
+            Text(
+              "Loading stats...",
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -127,9 +208,9 @@ class HomeScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatItem("1,234", "Total Files", Icons.folder_rounded),
+          _buildStatItem(provider.totalFiles.toString(), "Total Files", Icons.folder_rounded),
           Container(width: 1, height: 40, color: Colors.white.withOpacity(0.3)),
-          _buildStatItem("856 MB", "Storage Used", Icons.cloud_rounded),
+          _buildStatItem(provider.storageUsed, "Storage Used", Icons.cloud_rounded),
         ],
       ),
     );
@@ -159,11 +240,11 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFileCategories(BuildContext context) {
+  Widget _buildFileCategories(BuildContext context, HomeScreenProvider provider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(height: 20,),
+        const SizedBox(height: 20),
         const Text(
           "Browse Files",
           style: TextStyle(
@@ -182,38 +263,40 @@ class HomeScreen extends StatelessWidget {
           childAspectRatio: 1.1,
           children: [
             _buildModernFileButton(
-              context, 
-              Icons.apps_rounded, 
-              "All Files", 
-              "1,234 items",
+              context,
+              Icons.apps_rounded,
+              "All Files",
+              "${provider.totalFiles} items",
               const Color(0xFF6366F1),
               (){}
             ),
             _buildModernFileButton(
-              context, 
-              Icons.image_rounded, 
-              "Images", 
-              "456 photos",
+              context,
+              Icons.image_rounded,
+              "Images",
+              "${provider.imageCount} photos",
               const Color(0xFFEC4899),
               (){
                 Navigator.push(context, MaterialPageRoute(builder: (context)=>ImagePickerScreen()));
               }
             ),
             _buildModernFileButton(
-              context, 
-              Icons.audiotrack_rounded, 
-              "Audio", 
-              "128 tracks",
+              context,
+              Icons.audiotrack_rounded,
+              "Audio",
+              "${provider.audioCount} tracks",
               const Color(0xFF10B981),
               (){}
             ),
             _buildModernFileButton(
-              context, 
-              Icons.play_circle_rounded, 
-              "Videos", 
-              "89 videos",
+              context,
+              Icons.play_circle_rounded,
+              "Videos",
+              "${provider.videoCount} videos",
               const Color(0xFFF59E0B),
-              (){}
+              () {
+                Navigator.push(context, MaterialPageRoute(builder: (context)=>VideoPickerScreen()));
+              }
             ),
           ],
         ),
