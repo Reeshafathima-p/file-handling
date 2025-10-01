@@ -51,6 +51,7 @@ dependencies:
   photo_view: ^0.15.0
   video_player: ^2.8.6
   video_thumbnail: ^0.5.3
+  camerawesome: ^2.0.0
 
 dev_dependencies:
   flutter_test:

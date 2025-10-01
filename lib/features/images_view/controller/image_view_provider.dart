@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as path;
@@ -109,23 +110,23 @@ class ImageViewProvider with ChangeNotifier {
     try {
       isLoading = true;
       notifyListeners();
-      
+
       final XFile? image = await _picker.pickImage(
         source: ImageSource.camera,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         print('Camera image picked: ${image.path}');
         final uniqueName = _generateUniqueFileName(image.path, prefix: 'camera');
         final tempFile = await _copyFileWithNewName(File(image.path), uniqueName);
-        
+
         final savedFile = await _fileService.saveFileCategorized(tempFile);
         print('Image saved to: ${savedFile.path}');
         if (tempFile.path != savedFile.path && await tempFile.exists()) {
           await tempFile.delete();
         }
-        
+
         selectedImages.add(savedFile);
         isLoading = false;
         notifyListeners();
@@ -136,6 +137,7 @@ class ImageViewProvider with ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
+      print('Error picking from camera: $e');
       isLoading = false;
       notifyListeners();
       // Show error message
