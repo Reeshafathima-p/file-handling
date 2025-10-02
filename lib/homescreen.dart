@@ -262,14 +262,14 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSpacing: 16,
           childAspectRatio: 1.1,
           children: [
-            _buildModernFileButton(
-              context,
-              Icons.apps_rounded,
-              "All Files",
-              "${provider.totalFiles} items",
-              const Color(0xFF6366F1),
-              (){}
-            ),
+            // _buildModernFileButton(
+            //   context,
+            //   Icons.apps_rounded,
+            //   "All Files",
+            //   "${provider.totalFiles} items",
+            //   const Color(0xFF6366F1),
+            //   (){}
+            // ),
             _buildModernFileButton(
               context,
               Icons.image_rounded,
@@ -280,14 +280,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.push(context, MaterialPageRoute(builder: (context)=>ImagePickerScreen()));
               }
             ),
-            _buildModernFileButton(
-              context,
-              Icons.audiotrack_rounded,
-              "Audio",
-              "${provider.audioCount} tracks",
-              const Color(0xFF10B981),
-              (){}
-            ),
+            // _buildModernFileButton(
+            //   context,
+            //   Icons.audiotrack_rounded,
+            //   "Audio",
+            //   "${provider.audioCount} tracks",
+            //   const Color(0xFF10B981),
+            //   (){}
+            // ),
             _buildModernFileButton(
               context,
               Icons.play_circle_rounded,
